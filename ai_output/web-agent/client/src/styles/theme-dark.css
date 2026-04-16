@@ -1,0 +1,19 @@
+:root,
+:root.dark {
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3d3d3d;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --text-muted: #707070;
+  --accent: #4da6ff;
+  --accent-hover: #3d8ad9;
+  --border: #404040;
+  --shadow: rgba(0, 0, 0, 0.3);
+  --user-msg-bg: #4da6ff;
+  --user-msg-text: #ffffff;
+  --ai-msg-bg: #3d3d3d;
+  --ai-msg-text: #e0e0e0;
+  --code-bg: #2d2d2d;
+  --code-text: #e0e0e0;
+}
