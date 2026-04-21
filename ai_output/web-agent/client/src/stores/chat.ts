@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import * as api from '../api/rest';
+import type { ToolCallEvent } from '../api/rest';
 
 export interface Message {
   id: string;
@@ -10,10 +11,18 @@ export interface Message {
   created_at: string;
 }
 
+export interface ToolCallStatus {
+  tool: string;
+  status: 'calling' | 'success' | 'error';
+  result?: string;
+  error?: string;
+}
+
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<Record<string, Message[]>>({});
   const loading = ref(false);
   const streaming = ref(false);
+  const toolCalls = ref<Record<string, ToolCallStatus[]>>({});
 
   async function fetchMessages(sessionId: string) {
     loading.value = true;
@@ -42,12 +51,44 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function clearToolCalls(sessionId: string) {
+    toolCalls.value[sessionId] = [];
+  }
+
+  function addToolCall(sessionId: string, tool: string) {
+    if (!toolCalls.value[sessionId]) {
+      toolCalls.value[sessionId] = [];
+    }
+    toolCalls.value[sessionId].push({
+      tool,
+      status: 'calling',
+    });
+  }
+
+  function updateToolCall(sessionId: string, tool: string, result?: string, error?: string) {
+    const calls = toolCalls.value[sessionId];
+    if (!calls) return;
+
+    const call = calls.find(c => c.tool === tool && c.status === 'calling');
+    if (call) {
+      call.status = error ? 'error' : 'success';
+      call.result = result;
+      call.error = error;
+    }
+  }
+
+  function getToolCalls(sessionId: string): ToolCallStatus[] {
+    return toolCalls.value[sessionId] || [];
+  }
+
   async function sendMessageWithStream(
     sessionId: string,
     content: string,
-    onChunk: (content: string, reasoning: string) => void
+    onChunk: (content: string, reasoning: string) => void,
+    onToolEvent?: (event: ToolCallEvent) => void
   ) {
     streaming.value = true;
+    clearToolCalls(sessionId);
 
     // Add user message immediately
     const tempId = `temp-${Date.now()}`;
@@ -84,6 +125,17 @@ export const useChatStore = defineStore('chat', () => {
           lastMsg.reasoning = fullReasoning;
         }
         onChunk(content, reasoning);
+      }, (event) => {
+        if (event.type === 'tool_call') {
+          addToolCall(sessionId, event.tool);
+        } else if (event.type === 'tool_result') {
+          updateToolCall(sessionId, event.tool, event.result);
+        } else if (event.type === 'tool_error') {
+          updateToolCall(sessionId, event.tool, undefined, event.error);
+        }
+        if (onToolEvent) {
+          onToolEvent(event);
+        }
       });
     } catch (error) {
       // Remove AI message on error
@@ -100,6 +152,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function clearMessages(sessionId: string) {
     messages.value[sessionId] = [];
+    toolCalls.value[sessionId] = [];
   }
 
   return {
@@ -111,5 +164,7 @@ export const useChatStore = defineStore('chat', () => {
     sendMessageWithStream,
     getMessages,
     clearMessages,
+    getToolCalls,
+    clearToolCalls,
   };
 });

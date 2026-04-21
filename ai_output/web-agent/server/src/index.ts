@@ -6,6 +6,8 @@ import { initDatabase } from './services/database.js';
 import sessionRoutes from './routes/session.js';
 import chatRoutes from './routes/chat.js';
 import settingsRoutes from './routes/settings.js';
+import { getMCPClientManager } from './mcp/manager.js';
+import * as models from './services/models.js';
 
 // GraphQL Schema
 const typeDefs = `#graphql
@@ -139,6 +141,15 @@ async function startServer() {
 
   // Initialize database
   await initDatabase();
+
+  // Initialize MCP client manager with saved servers
+  const mcpManager = getMCPClientManager();
+  const settings = models.getSettings();
+  if (settings.mcpServers.length > 0) {
+    console.log(`Initializing ${settings.mcpServers.filter(s => s.enabled).length} MCP server(s)...`);
+    await mcpManager.initialize(settings.mcpServers);
+    console.log(`MCP servers connected: ${mcpManager.getConnectedServers().join(', ') || 'none'}`);
+  }
 
   // Create Apollo Server
   const server = new ApolloServer({

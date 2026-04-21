@@ -17,6 +17,14 @@ export interface Message {
   created_at: string;
 }
 
+export interface MCPServerConfig {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  headers?: Record<string, string>;
+}
+
 export interface Settings {
   id: number;
   api_endpoint: string;
@@ -24,6 +32,7 @@ export interface Settings {
   model: string;
   system_prompt: string;
   theme: string;
+  mcpServers: MCPServerConfig[];
 }
 
 // ============ Session 操作 ============
@@ -76,7 +85,7 @@ export function updateSessionTitle(id: string, title: string): void {
   const db = getDatabase();
   const now = new Date().toISOString();
   db.run('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?', [title, now, id]);
-  saveDatabase();
+  // Don't save on every update
 }
 
 export function deleteSession(id: string): void {
@@ -103,7 +112,7 @@ export function createMessage(sessionId: string, role: 'user' | 'assistant', con
   // 更新会话的 updated_at
   db.run('UPDATE sessions SET updated_at = ? WHERE id = ?', [now, sessionId]);
 
-  saveDatabase();
+  // Don't save to disk on every message - database is in-memory and periodically persisted
 
   return { id, session_id: sessionId, role, content, reasoning, created_at: now };
 }
@@ -130,20 +139,20 @@ export function getMessagesBySessionId(sessionId: string): Message[] {
 export function deleteMessage(id: string): void {
   const db = getDatabase();
   db.run('DELETE FROM messages WHERE id = ?', [id]);
-  saveDatabase();
+  // Don't save on every delete
 }
 
 export function updateMessageContent(id: string, content: string, reasoning: string = ''): void {
   const db = getDatabase();
   db.run('UPDATE messages SET content = ?, reasoning = ? WHERE id = ?', [content, reasoning, id]);
-  saveDatabase();
+  // Don't save to disk on every update - database is in-memory and periodically persisted
 }
 
 // ============ Settings 操作 ============
 
 export function getSettings(): Settings {
   const db = getDatabase();
-  const result = db.exec('SELECT id, api_endpoint, api_key, model, system_prompt, theme FROM settings WHERE id = 1');
+  const result = db.exec('SELECT id, api_endpoint, api_key, model, system_prompt, theme, mcp_servers FROM settings WHERE id = 1');
 
   if (result.length === 0 || result[0].values.length === 0) {
     return {
@@ -153,10 +162,17 @@ export function getSettings(): Settings {
       model: 'gpt-3.5-turbo',
       system_prompt: '',
       theme: 'light',
+      mcpServers: [],
     };
   }
 
   const row = result[0].values[0];
+  let mcpServers: MCPServerConfig[] = [];
+  try {
+    mcpServers = JSON.parse((row[6] as string) || '[]');
+  } catch {
+    mcpServers = [];
+  }
   return {
     id: row[0] as number,
     api_endpoint: row[1] as string,
@@ -164,10 +180,11 @@ export function getSettings(): Settings {
     model: row[3] as string,
     system_prompt: row[4] as string,
     theme: row[5] as string,
+    mcpServers,
   };
 }
 
-export function updateSettings(settings: Partial<Omit<Settings, 'id'>>): Settings {
+export function updateSettings(settings: Partial<Omit<Settings, 'id' | 'mcpServers'>> & { mcpServers?: MCPServerConfig[] }): Settings {
   const db = getDatabase();
   const current = getSettings();
 
@@ -177,13 +194,14 @@ export function updateSettings(settings: Partial<Omit<Settings, 'id'>>): Setting
   };
 
   db.run(
-    'UPDATE settings SET api_endpoint = ?, api_key = ?, model = ?, system_prompt = ?, theme = ? WHERE id = 1',
+    'UPDATE settings SET api_endpoint = ?, api_key = ?, model = ?, system_prompt = ?, theme = ?, mcp_servers = ? WHERE id = 1',
     [
       newSettings.api_endpoint,
       newSettings.api_key,
       newSettings.model,
       newSettings.system_prompt,
       newSettings.theme,
+      JSON.stringify(newSettings.mcpServers || []),
     ]
   );
 

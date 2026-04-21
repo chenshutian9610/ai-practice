@@ -2,6 +2,16 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import * as api from '../api/rest';
 
+export interface MCPServerConfig {
+  id: string;
+  name: string;
+  url?: string;
+  command?: string;
+  args?: string[];
+  enabled: boolean;
+  headers?: Record<string, string>;
+}
+
 export interface Settings {
   api_endpoint: string;
   api_key: string;
@@ -19,6 +29,7 @@ export const useSettingsStore = defineStore('settings', () => {
     theme: 'light',
   });
 
+  const mcpServers = ref<MCPServerConfig[]>([]);
   const loading = ref(false);
 
   async function fetchSettings() {
@@ -72,11 +83,50 @@ export const useSettingsStore = defineStore('settings', () => {
     updateSettings({ theme: newTheme });
   }
 
+  async function fetchMCPServers() {
+    try {
+      mcpServers.value = await api.getMCPServers();
+    } catch (error) {
+      console.error('Failed to fetch MCP servers:', error);
+      mcpServers.value = [];
+    }
+  }
+
+  async function addMCPServer(server: { name: string; url?: string; command?: string; args?: string[]; enabled?: boolean; headers?: Record<string, string> }) {
+    const newServer = await api.addMCPServer(server);
+    mcpServers.value.push(newServer);
+    return newServer;
+  }
+
+  async function updateMCPServer(id: string, updates: { name?: string; url?: string; command?: string; args?: string[]; enabled?: boolean; headers?: Record<string, string> }) {
+    const updatedServer = await api.updateMCPServer(id, updates);
+    const index = mcpServers.value.findIndex(s => s.id === id);
+    if (index !== -1) {
+      mcpServers.value[index] = updatedServer;
+    }
+    return updatedServer;
+  }
+
+  async function deleteMCPServer(id: string) {
+    await api.deleteMCPServer(id);
+    mcpServers.value = mcpServers.value.filter(s => s.id !== id);
+  }
+
+  async function testMCPServer(url: string, headers?: Record<string, string>) {
+    return api.testMCPServer(url, headers);
+  }
+
   return {
     settings,
+    mcpServers,
     loading,
     fetchSettings,
     updateSettings,
     toggleTheme,
+    fetchMCPServers,
+    addMCPServer,
+    updateMCPServer,
+    deleteMCPServer,
+    testMCPServer,
   };
 });

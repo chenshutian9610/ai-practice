@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 
+const props = defineProps<{
+  disabled?: boolean;
+}>();
+
 const emit = defineEmits<{
   (e: 'submit', content: string): void;
   (e: 'file', file: File): void;
@@ -20,35 +24,30 @@ function autoResize() {
 }
 
 const canSubmit = computed(() => {
-  return (inputText.value.trim() || uploadedFile.value) && !isSending.value;
+  return (inputText.value.trim() || uploadedFile.value) && !props.disabled;
 });
-
-const isSending = ref(false);
 
 async function handleSubmit() {
   if (!canSubmit.value) return;
 
-  isSending.value = true;
   const content = inputText.value.trim();
 
-  try {
-    emit('submit', content);
-    inputText.value = '';
-    uploadedFile.value = null;
-    // Reset textarea height after sending
-    if (textareaRef.value) {
-      textareaRef.value.style.height = 'auto';
-    }
-  } finally {
-    isSending.value = false;
+  emit('submit', content);
+  inputText.value = '';
+  uploadedFile.value = null;
+  // Reset textarea height after sending
+  if (textareaRef.value) {
+    textareaRef.value.style.height = 'auto';
   }
 }
 
 function handleKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  // Send with Ctrl+Enter (or Cmd+Enter on Mac)
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     handleSubmit();
   }
+  // Shift+Enter for newline
 }
 
 function triggerFileUpload() {
@@ -86,9 +85,9 @@ function removeFile() {
         v-model="inputText"
         @keydown="handleKeyDown"
         @input="autoResize"
-        placeholder="输入消息，按 Enter 发送，Shift+Enter 换行"
+        placeholder="输入消息，Ctrl+Enter 发送，Enter 换行"
         rows="1"
-        :disabled="isSending"
+        :disabled="disabled"
       ></textarea>
 
       <div class="input-actions">
@@ -105,9 +104,9 @@ function removeFile() {
           class="send-btn"
           @click="handleSubmit"
           :disabled="!canSubmit"
-          :class="{ sending: isSending }"
+          :class="{ sending: disabled }"
         >
-          {{ isSending ? '发送中...' : '发送' }}
+          {{ disabled ? '发送中...' : '发送' }}
         </button>
       </div>
     </div>

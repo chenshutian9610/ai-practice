@@ -41,10 +41,20 @@ export async function sendMessage(sessionId: string, content: string) {
   return res.json();
 }
 
+export interface ToolCallEvent {
+  type: 'tool_call' | 'tool_result' | 'tool_error';
+  tool: string;
+  toolCallId: string;
+  input?: Record<string, unknown>;
+  result?: string;
+  error?: string;
+}
+
 export async function sendMessageStream(
   sessionId: string,
   content: string,
-  onChunk: (chunk: string, reasoning: string) => void
+  onChunk: (chunk: string, reasoning: string) => void,
+  onToolEvent?: (event: ToolCallEvent) => void
 ) {
   const apiKey = localStorage.getItem('api_key') || '';
   const res = await fetch(`${API_BASE}/chat/stream`, {
@@ -84,6 +94,23 @@ export async function sendMessageStream(
 
       try {
         const parsed = JSON.parse(data);
+
+        // Check for tool events
+        if (parsed.type === 'tool_call' || parsed.type === 'tool_result' || parsed.type === 'tool_error') {
+          if (onToolEvent) {
+            onToolEvent({
+              type: parsed.type,
+              tool: parsed.tool,
+              toolCallId: parsed.toolCallId,
+              input: parsed.input,
+              result: parsed.result,
+              error: parsed.error,
+            });
+          }
+          continue;
+        }
+
+        // Regular text content
         if (parsed.content || parsed.reasoning) {
           onChunk(parsed.content || '', parsed.reasoning || '');
         }
@@ -107,6 +134,66 @@ export async function updateSettings(settings: any) {
     body: JSON.stringify(settings),
   });
   if (!res.ok) throw new Error('Failed to update settings');
+  return res.json();
+}
+
+export async function getMCPServers() {
+  const res = await fetch(`${API_BASE}/settings/mcp-servers`);
+  if (!res.ok) throw new Error('Failed to fetch MCP servers');
+  return res.json();
+}
+
+export async function updateMCPServers(servers: any[]) {
+  const res = await fetch(`${API_BASE}/settings/mcp-servers`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ servers }),
+  });
+  if (!res.ok) throw new Error('Failed to update MCP servers');
+  return res.json();
+}
+
+export async function addMCPServer(server: { name: string; url: string; enabled?: boolean; headers?: Record<string, string> }) {
+  const res = await fetch(`${API_BASE}/settings/mcp-servers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(server),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || 'Failed to add MCP server');
+  }
+  return res.json();
+}
+
+export async function updateMCPServer(id: string, updates: { name?: string; url?: string; enabled?: boolean; headers?: Record<string, string> }) {
+  const res = await fetch(`${API_BASE}/settings/mcp-servers/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || 'Failed to update MCP server');
+  }
+  return res.json();
+}
+
+export async function deleteMCPServer(id: string) {
+  const res = await fetch(`${API_BASE}/settings/mcp-servers/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete MCP server');
+  return res.json();
+}
+
+export async function testMCPServer(url: string, headers?: Record<string, string>) {
+  const res = await fetch(`${API_BASE}/settings/mcp-servers/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, headers }),
+  });
+  if (!res.ok) throw new Error('Failed to test MCP server');
   return res.json();
 }
 

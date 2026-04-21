@@ -2,8 +2,36 @@ import { Router } from 'express';
 import * as models from '../services/models.js';
 import { chat, chatStream } from '../services/llm.js';
 import { saveDatabase } from '../services/database.js';
+import { getMCPClientManager } from '../mcp/manager.js';
+import { ToolDefinition, ToolCall } from '../services/llm.js';
+import { MCPTool } from '../mcp/types.js';
 
 const router = Router();
+
+const MAX_TOOL_CALL_ITERATIONS = 10;
+
+interface ToolCallResult {
+  toolCallId: string;
+  toolName: string;
+  result: string;
+  error?: string;
+}
+
+// Convert MCP tools to LLM tool format (OpenAI-compatible format)
+function convertToolsForLLM(tools: Array<MCPTool & { serverId: string; serverName: string }>): { type: string; function: { name: string; description?: string; parameters: { type: string; properties: Record<string, unknown>; required?: string[] } } }[] {
+  return tools.map(tool => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description || `Tool from ${tool.serverName}`,
+      parameters: {
+        type: 'object',
+        properties: (tool.inputSchema?.properties as Record<string, unknown>) || {},
+        required: tool.inputSchema?.required || [],
+      },
+    },
+  }));
+}
 
 // 发送消息（非流式）
 router.post('/', async (req, res) => {
@@ -48,6 +76,11 @@ router.post('/', async (req, res) => {
     // 添加当前用户消息
     messages.push({ role: 'user', content: userMessage.content });
 
+    // 初始化 MCP 客户端
+    const mcpManager = getMCPClientManager();
+    const tools = mcpManager.isInitialized() ? mcpManager.getAllTools() : [];
+    const llmTools = tools.length > 0 ? convertToolsForLLM(tools) : undefined;
+
     // 调用 LLM
     const response = await chat(
       {
@@ -55,11 +88,81 @@ router.post('/', async (req, res) => {
         apiKey: finalApiKey,
         model: settings.model,
       },
-      messages
+      messages,
+      llmTools
     );
 
     // 保存 AI 回复
-    const assistantMessage = models.createMessage(sessionId, 'assistant', response.content);
+    let assistantMessage = models.createMessage(sessionId, 'assistant', response.content);
+
+    // 处理工具调用循环
+    let toolCallResults: ToolCallResult[] = [];
+    let iteration = 0;
+
+    while (response.toolCalls && response.toolCalls.length > 0 && iteration < MAX_TOOL_CALL_ITERATIONS) {
+      iteration++;
+
+      // 执行工具调用
+      const toolPromises = response.toolCalls.map(async (tc: ToolCall) => {
+        try {
+          const { result, serverName } = await mcpManager.callTool(tc.name, tc.arguments);
+          return {
+            toolCallId: tc.id,
+            toolName: tc.name,
+            result: typeof result === 'string' ? result : JSON.stringify(result),
+            error: undefined,
+          };
+        } catch (error) {
+          return {
+            toolCallId: tc.id,
+            toolName: tc.name,
+            result: '',
+            error: String(error),
+          };
+        }
+      });
+
+      toolCallResults = await Promise.all(toolPromises);
+
+      // 添加助手消息（包含工具调用）
+      const toolCallMessage = models.createMessage(sessionId, 'assistant',
+        '', '', `Tool calls: ${JSON.stringify(response.toolCalls)}`);
+
+      // 将工具调用结果添加到消息上下文
+      const toolResultsContent = toolCallResults.map(r =>
+        r.error
+          ? `Tool "${r.toolName}" error: ${r.error}`
+          : `Tool "${r.toolName}" result: ${r.result}`
+      ).join('\n');
+
+      messages.push({ role: 'assistant', content: response.content });
+      messages.push({
+        role: 'user',
+        content: `Tool results:\n${toolResultsContent}`,
+      });
+
+      // 再次调用 LLM
+      const nextResponse = await chat(
+        {
+          endpoint: settings.api_endpoint,
+          apiKey: finalApiKey,
+          model: settings.model,
+        },
+        messages,
+        llmTools
+      );
+
+      response.content = nextResponse.content;
+      response.reasoning = nextResponse.reasoning;
+
+      // 更新助手消息
+      assistantMessage.content = nextResponse.content;
+      models.updateMessageContent(assistantMessage.id, nextResponse.content, nextResponse.reasoning || '');
+
+      if (!nextResponse.toolCalls || nextResponse.toolCalls.length === 0) {
+        break;
+      }
+    }
 
     // 如果是第一条消息，更新会话标题
     if (history.length === 0) {
@@ -71,6 +174,7 @@ router.post('/', async (req, res) => {
     res.json({
       userMessage,
       assistantMessage,
+      toolCallResults,
     });
   } catch (error) {
     console.error('Chat error:', error);
@@ -133,27 +237,137 @@ router.post('/stream', async (req, res) => {
       models.updateSessionTitle(sessionId, title);
     }
 
+    // 初始化 MCP 客户端
+    const mcpManager = getMCPClientManager();
+    const tools = mcpManager.isInitialized() ? mcpManager.getAllTools() : [];
+    const llmTools = tools.length > 0 ? convertToolsForLLM(tools) : undefined;
+
     // 存储 AI 消息
     const assistantMessage = models.createMessage(sessionId, 'assistant', '', '');
 
-    // 流式调用 LLM
-    let fullContent = '';
-    let fullReasoning = '';
-    for await (const chunk of chatStream(
-      {
-        endpoint: settings.api_endpoint,
-        apiKey: finalApiKey,
-        model: settings.model,
-      },
-      messages
-    )) {
-      fullContent += chunk.content;
-      fullReasoning += chunk.reasoning;
-      res.write(`data: ${JSON.stringify({ content: chunk.content, reasoning: chunk.reasoning, messageId: assistantMessage.id })}\n\n`);
-    }
+    // 工具调用循环
+    let iteration = 0;
+    let hasToolCalls = false;
+    let lastToolCalls: ToolCall[] = [];
+    let finalContent = '';
+    let finalReasoning = '';
+    let currentToolCalls: ToolCall[] = [];
+
+    do {
+      iteration++;
+      hasToolCalls = false;
+
+      // 流式调用 LLM
+      let fullContent = '';
+      let fullReasoning = '';
+
+      for await (const chunk of chatStream(
+        {
+          endpoint: settings.api_endpoint,
+          apiKey: finalApiKey,
+          model: settings.model,
+        },
+        messages,
+        llmTools
+      )) {
+        fullContent += chunk.content;
+        fullReasoning += chunk.reasoning;
+        res.write(`data: ${JSON.stringify({ content: chunk.content, reasoning: chunk.reasoning, messageId: assistantMessage.id })}\n\n`);
+      }
+
+      // 只有在有工具可用时才检查工具调用
+      // 如果没有工具，直接完成响应
+      if (!llmTools || llmTools.length === 0) {
+        finalContent = fullContent;
+        finalReasoning = fullReasoning;
+        break;
+      }
+
+      // 检查是否有工具调用
+      // 由于流式响应无法直接获取 tool_calls，我们需要使用非流式调用来获取
+      const llmResponse = await chat(
+        {
+          endpoint: settings.api_endpoint,
+          apiKey: finalApiKey,
+          model: settings.model,
+        },
+        messages,
+        llmTools
+      );
+
+      if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
+        hasToolCalls = true;
+        currentToolCalls = llmResponse.toolCalls;
+        lastToolCalls = llmResponse.toolCalls;
+        fullContent = llmResponse.content;
+
+        // 发送工具调用事件
+        for (const tc of currentToolCalls) {
+          res.write(`data: ${JSON.stringify({
+            type: 'tool_call',
+            tool: tc.name,
+            toolCallId: tc.id,
+            input: tc.arguments,
+          })}\n\n`);
+        }
+
+        // 执行工具调用
+        const toolPromises = currentToolCalls.map(async (tc: ToolCall) => {
+          try {
+            const { result, serverName } = await mcpManager.callTool(tc.name, tc.arguments);
+            const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+            res.write(`data: ${JSON.stringify({
+              type: 'tool_result',
+              tool: tc.name,
+              toolCallId: tc.id,
+              result: resultStr,
+            })}\n\n`);
+            return {
+              toolCallId: tc.id,
+              toolName: tc.name,
+              result: resultStr,
+              error: undefined,
+            };
+          } catch (error) {
+            const errorMsg = String(error);
+            res.write(`data: ${JSON.stringify({
+              type: 'tool_error',
+              tool: tc.name,
+              toolCallId: tc.id,
+              error: errorMsg,
+            })}\n\n`);
+            return {
+              toolCallId: tc.id,
+              toolName: tc.name,
+              result: '',
+              error: errorMsg,
+            };
+          }
+        });
+
+        const toolCallResults = await Promise.all(toolPromises);
+
+        // 将 LLM 回复和工具调用结果添加到消息上下文
+        messages.push({ role: 'assistant', content: fullContent });
+        const toolResultsContent = toolCallResults.map(r =>
+          r.error
+            ? `Tool "${r.toolName}" error: ${r.error}`
+            : `Tool "${r.toolName}" result: ${r.result}`
+        ).join('\n');
+        messages.push({
+          role: 'user',
+          content: `Tool results:\n${toolResultsContent}`,
+        });
+      } else {
+        // 没有更多工具调用，保存最终内容
+        finalContent = fullContent;
+        finalReasoning = fullReasoning;
+        break;
+      }
+    } while (hasToolCalls && iteration < MAX_TOOL_CALL_ITERATIONS);
 
     // 流式完成后更新 AI 消息内容
-    models.updateMessageContent(assistantMessage.id, fullContent, fullReasoning);
+    models.updateMessageContent(assistantMessage.id, finalContent, finalReasoning);
 
     res.write('data: [DONE]\n\n');
     res.end();

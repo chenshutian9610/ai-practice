@@ -2,3 +2,5 @@ settings.local.json
 .playwright-mcp/
 node_modules/
 *.db
+.playwright-cli/
+.playwright/

@@ -7,6 +7,7 @@ import { useSettingsStore } from '../stores/settings';
 import { storeToRefs } from 'pinia';
 import MessageList from './MessageList.vue';
 import InputArea from './InputArea.vue';
+import ToolCallIndicator from './ToolCallIndicator.vue';
 
 const route = useRoute();
 const sessionStore = useSessionStore();
@@ -14,11 +15,16 @@ const chatStore = useChatStore();
 const settingsStore = useSettingsStore();
 
 const { currentSessionId } = storeToRefs(sessionStore);
-const { loading } = storeToRefs(chatStore);
+const { loading, streaming } = storeToRefs(chatStore);
 const { settings } = storeToRefs(settingsStore);
 
 const currentSession = computed(() => {
   return sessionStore.sessions.find(s => s.id === currentSessionId.value);
+});
+
+const toolCalls = computed(() => {
+  if (!currentSessionId.value) return [];
+  return chatStore.getToolCalls(currentSessionId.value);
 });
 
 // Load messages when session changes
@@ -51,8 +57,11 @@ settingsStore.fetchSettings();
 <template>
   <div class="chat-window">
     <template v-if="currentSessionId">
+      <div class="chat-header">
+        <ToolCallIndicator v-if="streaming && toolCalls.length > 0" :toolCalls="toolCalls" />
+      </div>
       <MessageList :sessionId="currentSessionId" />
-      <InputArea @submit="handleSendMessage" />
+      <InputArea :disabled="streaming" @submit="handleSendMessage" />
     </template>
 
     <template v-else>
@@ -75,6 +84,10 @@ settingsStore.fetchSettings();
   flex-direction: column;
   background: var(--bg-primary);
   position: relative;
+}
+
+.chat-header {
+  padding: 8px 16px;
 }
 
 .no-session {

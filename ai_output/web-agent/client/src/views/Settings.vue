@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useSettingsStore } from '../stores/settings';
 import { storeToRefs } from 'pinia';
+import MCPServerList from '../components/MCPServerList.vue';
 
 const router = useRouter();
 const settingsStore = useSettingsStore();
@@ -23,6 +24,8 @@ onMounted(async () => {
   await settingsStore.fetchSettings();
   // 同步 store 中的设置到本地，保留 api_key（可能来自 localStorage 或后端）
   localSettings.value = { ...settings.value };
+  // 获取 MCP Servers
+  await settingsStore.fetchMCPServers();
 });
 
 async function saveSettings() {
@@ -169,6 +172,10 @@ async function testConnection() {
             </button>
           </div>
         </div>
+      </div>
+
+      <div class="settings-group">
+        <MCPServerList />
       </div>
 
       <div class="settings-actions">

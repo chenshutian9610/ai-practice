@@ -11,6 +11,9 @@ let db: Database | null = null;
 const DB_PATH = path.resolve(__dirname, '../../../data/web-agent.db');
 console.log('Database path:', DB_PATH);
 
+// Periodic save timer
+let saveTimer: NodeJS.Timeout | null = null;
+
 export async function initDatabase(): Promise<Database> {
   const SQL = await initSqlJs();
 
@@ -51,7 +54,8 @@ export async function initDatabase(): Promise<Database> {
       api_key TEXT DEFAULT '',
       model TEXT DEFAULT 'gpt-3.5-turbo',
       system_prompt TEXT DEFAULT '',
-      theme TEXT DEFAULT 'light'
+      theme TEXT DEFAULT 'light',
+      mcp_servers TEXT DEFAULT '[]'
     )
   `);
 
@@ -60,6 +64,12 @@ export async function initDatabase(): Promise<Database> {
   if (result.length === 0 || result[0].values[0][0] === 0) {
     db.run('INSERT INTO settings (id, theme) VALUES (1, "light")');
   }
+
+  // 启动定期保存（每 30 秒）
+  saveTimer = setInterval(() => {
+    saveDatabase();
+    console.log('Database auto-saved');
+  }, 30000);
 
   saveDatabase();
 
@@ -87,6 +97,10 @@ export function saveDatabase(): void {
 }
 
 export function closeDatabase(): void {
+  if (saveTimer) {
+    clearInterval(saveTimer);
+    saveTimer = null;
+  }
   if (db) {
     saveDatabase();
     db.close();
