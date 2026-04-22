@@ -14,3 +14,8 @@
    - 怎么启动项目
    - docs/ 中有哪些文档及其说明
    - 主要功能的截图 (通过 playwright 截图, 放在 img/ 下)
+
+<!-- SPECKIT START -->
+当前特性: 模型切换功能
+计划文档: specs/001-model-switching/plan.md
+<!-- SPECKIT END -->

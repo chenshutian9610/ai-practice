@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, watch, ref, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSessionStore } from '../stores/session';
 import { useChatStore } from '../stores/chat';
@@ -8,13 +8,14 @@ import { storeToRefs } from 'pinia';
 import MessageList from './MessageList.vue';
 import InputArea from './InputArea.vue';
 import ToolCallIndicator from './ToolCallIndicator.vue';
+import ModelSelector from './ModelSelector.vue';
 
 const route = useRoute();
 const sessionStore = useSessionStore();
 const chatStore = useChatStore();
 const settingsStore = useSettingsStore();
 
-const { currentSessionId } = storeToRefs(sessionStore);
+const { currentSessionId, currentModel } = storeToRefs(sessionStore);
 const { loading, streaming } = storeToRefs(chatStore);
 const { settings } = storeToRefs(settingsStore);
 
@@ -25,6 +26,31 @@ const currentSession = computed(() => {
 const toolCalls = computed(() => {
   if (!currentSessionId.value) return [];
   return chatStore.getToolCalls(currentSessionId.value);
+});
+
+// Double ESC handling for stopping stream
+const lastEscTime = ref(0);
+const ESC_DOUBLE_THRESHOLD = 300; // ms
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && streaming.value) {
+    const now = Date.now();
+    if (now - lastEscTime.value < ESC_DOUBLE_THRESHOLD) {
+      // Double ESC - stop the stream
+      chatStore.stopStream();
+      lastEscTime.value = 0;
+    } else {
+      lastEscTime.value = now;
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown);
 });
 
 // Load messages when session changes
@@ -49,6 +75,16 @@ async function handleSendMessage(content: string) {
   }
 }
 
+// Handle model change
+async function handleModelChange(model: string) {
+  await sessionStore.updateSessionModel(model);
+}
+
+// Handle stop stream
+function handleStop() {
+  chatStore.stopStream();
+}
+
 // Refresh sessions on mount
 sessionStore.fetchSessions();
 settingsStore.fetchSettings();
@@ -58,10 +94,14 @@ settingsStore.fetchSettings();
   <div class="chat-window">
     <template v-if="currentSessionId">
       <div class="chat-header">
+        <ModelSelector
+          :model="currentModel"
+          @update:model="handleModelChange"
+        />
         <ToolCallIndicator v-if="streaming && toolCalls.length > 0" :toolCalls="toolCalls" />
       </div>
       <MessageList :sessionId="currentSessionId" />
-      <InputArea :disabled="streaming" @submit="handleSendMessage" />
+      <InputArea :disabled="streaming" :streaming="streaming" @submit="handleSendMessage" @stop="handleStop" />
     </template>
 
     <template v-else>

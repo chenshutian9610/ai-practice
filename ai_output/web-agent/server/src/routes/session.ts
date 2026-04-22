@@ -16,11 +16,11 @@ router.get('/', (req, res) => {
 // 创建新会话
 router.post('/', (req, res) => {
   try {
-    const { title } = req.body;
+    const { title, model } = req.body;
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
     }
-    const session = models.createSession(title);
+    const session = models.createSession(title, model);
     res.status(201).json(session);
   } catch (error) {
     res.status(500).json({ error: String(error) });
@@ -66,6 +66,24 @@ router.delete('/:id', (req, res) => {
     }
     models.deleteSession(req.params.id);
     res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// 更新会话模型
+router.put('/:id/model', (req, res) => {
+  try {
+    const { model } = req.body;
+    if (!model) {
+      return res.status(400).json({ error: 'Model is required' });
+    }
+    const existing = models.getSessionById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const updated = models.updateSessionModel(req.params.id, model);
+    res.json(updated);
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }

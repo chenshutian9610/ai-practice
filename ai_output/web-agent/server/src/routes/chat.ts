@@ -36,7 +36,7 @@ function convertToolsForLLM(tools: Array<MCPTool & { serverId: string; serverNam
 // 发送消息（非流式）
 router.post('/', async (req, res) => {
   try {
-    const { sessionId, content } = req.body;
+    const { sessionId, content, model } = req.body;
     const apiKey = req.headers['x-api-key'] as string;
 
     if (!sessionId || !content) {
@@ -56,6 +56,8 @@ router.post('/', async (req, res) => {
     const settings = models.getSettings();
     // Use header API key if provided, otherwise use stored
     const finalApiKey = apiKey || settings.api_key;
+    // Use provided model, session model, or default model
+    const finalModel = model || session.model || settings.model;
 
     // 构建消息列表
     const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
@@ -86,7 +88,7 @@ router.post('/', async (req, res) => {
       {
         endpoint: settings.api_endpoint,
         apiKey: finalApiKey,
-        model: settings.model,
+        model: finalModel,
       },
       messages,
       llmTools
@@ -146,7 +148,7 @@ router.post('/', async (req, res) => {
         {
           endpoint: settings.api_endpoint,
           apiKey: finalApiKey,
-          model: settings.model,
+          model: finalModel,
         },
         messages,
         llmTools
@@ -185,7 +187,7 @@ router.post('/', async (req, res) => {
 // 流式聊天
 router.post('/stream', async (req, res) => {
   try {
-    const { sessionId, content } = req.body;
+    const { sessionId, content, model } = req.body;
     const apiKey = req.headers['x-api-key'] as string;
 
     if (!sessionId || !content) {
@@ -205,6 +207,8 @@ router.post('/stream', async (req, res) => {
     const settings = models.getSettings();
     // Use header API key if provided, otherwise use stored
     const finalApiKey = apiKey || settings.api_key;
+    // Use provided model, session model, or default model
+    const finalModel = model || session.model || settings.model;
 
     // 构建消息列表
     const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
@@ -237,13 +241,24 @@ router.post('/stream', async (req, res) => {
       models.updateSessionTitle(sessionId, title);
     }
 
-    // 初始化 MCP 客户端
+    // 初始化 MCP 客户端 - 临时禁用以测试
     const mcpManager = getMCPClientManager();
-    const tools = mcpManager.isInitialized() ? mcpManager.getAllTools() : [];
+    const tools = []; // mcpManager.isInitialized() ? mcpManager.getAllTools() : [];
     const llmTools = tools.length > 0 ? convertToolsForLLM(tools) : undefined;
+    console.log('llmTools:', llmTools ? 'enabled' : 'disabled');
 
     // 存储 AI 消息
     const assistantMessage = models.createMessage(sessionId, 'assistant', '', '');
+
+    // Create abort controller linked to client disconnect
+    const abortController = new AbortController();
+    let clientDisconnected = false;
+    const clientDisconnectedHandler = () => {
+      clientDisconnected = true;
+      // Don't abort immediately - let the stream complete and check afterwards
+    };
+    req.on('close', clientDisconnectedHandler);
+    const streamSignal = abortController.signal;
 
     // 工具调用循环
     let iteration = 0;
@@ -252,27 +267,47 @@ router.post('/stream', async (req, res) => {
     let finalContent = '';
     let finalReasoning = '';
     let currentToolCalls: ToolCall[] = [];
+    let fullContent = '';
+    let fullReasoning = '';
 
     do {
       iteration++;
       hasToolCalls = false;
+      // Reset content for this iteration
+      fullContent = '';
+      fullReasoning = '';
 
-      // 流式调用 LLM
-      let fullContent = '';
-      let fullReasoning = '';
-
-      for await (const chunk of chatStream(
-        {
-          endpoint: settings.api_endpoint,
-          apiKey: finalApiKey,
-          model: settings.model,
-        },
-        messages,
-        llmTools
-      )) {
-        fullContent += chunk.content;
-        fullReasoning += chunk.reasoning;
-        res.write(`data: ${JSON.stringify({ content: chunk.content, reasoning: chunk.reasoning, messageId: assistantMessage.id })}\n\n`);
+      try {
+        for await (const chunk of chatStream(
+          {
+            endpoint: settings.api_endpoint,
+            apiKey: finalApiKey,
+            model: finalModel,
+          },
+          messages,
+          llmTools,
+          streamSignal
+        )) {
+          // 检查客户端是否已断开
+          if (res.writableEnded) {
+            break;
+          }
+          fullContent += chunk.content;
+          fullReasoning += chunk.reasoning;
+          res.write(`data: ${JSON.stringify({ content: chunk.content, reasoning: chunk.reasoning, messageId: assistantMessage.id })}\n\n`);
+          res.flush?.(); // 确保数据立即发送
+        }
+      } catch (error) {
+        // 处理 AbortError
+        if ((error as Error).name === 'AbortError') {
+          // 保存已生成的部分内容
+          if (fullContent) {
+            models.updateMessageContent(assistantMessage.id, fullContent, fullReasoning);
+          }
+          return;
+        }
+        // 其他错误继续抛出
+        throw error;
       }
 
       // 只有在有工具可用时才检查工具调用
@@ -289,7 +324,7 @@ router.post('/stream', async (req, res) => {
         {
           endpoint: settings.api_endpoint,
           apiKey: finalApiKey,
-          model: settings.model,
+          model: finalModel,
         },
         messages,
         llmTools
@@ -364,15 +399,35 @@ router.post('/stream', async (req, res) => {
         finalReasoning = fullReasoning;
         break;
       }
-    } while (hasToolCalls && iteration < MAX_TOOL_CALL_ITERATIONS);
+    } while (hasToolCalls && iteration < MAX_TOOL_CALL_ITERATIONS && !clientDisconnected && !res.writableEnded);
+
+    // 检查客户端是否已断开
+    if (clientDisconnected || res.writableEnded) {
+      // 保存已生成的部分内容
+      const partialContent = fullContent || '';
+      if (partialContent) {
+        models.updateMessageContent(assistantMessage.id, partialContent, fullReasoning);
+      }
+      // 不要发送任何内容，直接结束
+      return;
+    }
 
     // 流式完成后更新 AI 消息内容
-    models.updateMessageContent(assistantMessage.id, finalContent, finalReasoning);
+    models.updateMessageContent(assistantMessage.id, finalContent || fullContent, finalReasoning || fullReasoning);
 
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (error) {
     console.error('Chat stream error:', error);
+    // Check if client disconnected (AbortError or premature close)
+    if ((error as Error).name === 'AbortError' || (error as NodeJS.ErrnoException).code === 'ERR_STREAM_PREMATURE_CLOSE') {
+      // 保存已生成的部分内容
+      const partialContent = fullContent || '';
+      if (partialContent) {
+        models.updateMessageContent(assistantMessage.id, partialContent, fullReasoning);
+      }
+      return;
+    }
     res.write(`data: ${JSON.stringify({ error: String(error) })}\n\n`);
     res.end();
   }

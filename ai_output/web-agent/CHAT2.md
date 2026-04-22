@@ -1,6 +1,13 @@
-继 [CHAT.md](./CHAT.md) 之后新增需求, 依旧是 claudecode + minimax-m2.5
-
-> 尝试 openspec `/opsx:propose ──► /opsx:apply ──► /opsx:archive`
+---
+功能: 新增 mcp server 支持
+环境: claudecode + minimax-m2.5
+工具:
+  - playwright-cli
+  - openspec
+    1. /opsx:propose
+    2. /opsx:apply
+    3. /opsx:archive
+---
 
 ```sh
 npm install -g @playwright/cli@latest

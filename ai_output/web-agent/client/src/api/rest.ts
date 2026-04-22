@@ -6,11 +6,11 @@ export async function getSessions() {
   return res.json();
 }
 
-export async function createSession(title: string) {
+export async function createSession(title: string, model?: string) {
   const res = await fetch(`${API_BASE}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, model }),
   });
   if (!res.ok) throw new Error('Failed to create session');
   return res.json();
@@ -25,6 +25,16 @@ export async function getSession(id: string) {
 export async function deleteSession(id: string) {
   const res = await fetch(`${API_BASE}/sessions/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete session');
+}
+
+export async function updateSessionModel(id: string, model: string) {
+  const res = await fetch(`${API_BASE}/sessions/${id}/model`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model }),
+  });
+  if (!res.ok) throw new Error('Failed to update session model');
+  return res.json();
 }
 
 export async function sendMessage(sessionId: string, content: string) {
@@ -54,7 +64,8 @@ export async function sendMessageStream(
   sessionId: string,
   content: string,
   onChunk: (chunk: string, reasoning: string) => void,
-  onToolEvent?: (event: ToolCallEvent) => void
+  onToolEvent?: (event: ToolCallEvent) => void,
+  signal?: AbortSignal
 ) {
   const apiKey = localStorage.getItem('api_key') || '';
   const res = await fetch(`${API_BASE}/chat/stream`, {
@@ -64,6 +75,7 @@ export async function sendMessageStream(
       ...(apiKey ? { 'x-api-key': apiKey } : {})
     },
     body: JSON.stringify({ sessionId, content }),
+    signal,
   });
 
   if (!res.ok) {

@@ -1,12 +1,13 @@
+---
+功能: 初始化一个简单的 AI 聊天网站, 自定义 LLM
+环境: claudecode + minimax-m2.5
+工具:
+  - playwright-mcp
+  - chrome-devtools-mcp
+---
 
-- [准备](#准备)
 - [初始化](#初始化)
 - [第一版, 验证阶段](#第一版-验证阶段)
-
-### 准备
-
-- 工具: claudecode + minimax-m2.5
-- 工作目录: `ai_output/web_agent/`
 
 ### 初始化
 

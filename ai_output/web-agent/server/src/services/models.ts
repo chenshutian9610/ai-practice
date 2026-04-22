@@ -4,6 +4,7 @@ import { getDatabase, saveDatabase } from './database';
 export interface Session {
   id: string;
   title: string;
+  model: string;
   created_at: string;
   updated_at: string;
 }
@@ -37,38 +38,40 @@ export interface Settings {
 
 // ============ Session 操作 ============
 
-export function createSession(title: string): Session {
+export function createSession(title: string, model?: string): Session {
   const db = getDatabase();
   const id = uuidv4();
   const now = new Date().toISOString();
+  const defaultModel = model || getSettings().model;
 
   db.run(
-    'INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)',
-    [id, title, now, now]
+    'INSERT INTO sessions (id, title, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    [id, title, defaultModel, now, now]
   );
 
   saveDatabase();
 
-  return { id, title, created_at: now, updated_at: now };
+  return { id, title, model: defaultModel, created_at: now, updated_at: now };
 }
 
 export function getAllSessions(): Session[] {
   const db = getDatabase();
-  const result = db.exec('SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC');
+  const result = db.exec('SELECT id, title, model, created_at, updated_at FROM sessions ORDER BY updated_at DESC');
 
   if (result.length === 0) return [];
 
   return result[0].values.map(row => ({
     id: row[0] as string,
     title: row[1] as string,
-    created_at: row[2] as string,
-    updated_at: row[3] as string,
+    model: row[2] as string || getSettings().model,
+    created_at: row[3] as string,
+    updated_at: row[4] as string,
   }));
 }
 
 export function getSessionById(id: string): Session | null {
   const db = getDatabase();
-  const result = db.exec('SELECT id, title, created_at, updated_at FROM sessions WHERE id = ?', [id]);
+  const result = db.exec('SELECT id, title, model, created_at, updated_at FROM sessions WHERE id = ?', [id]);
 
   if (result.length === 0 || result[0].values.length === 0) return null;
 
@@ -76,8 +79,9 @@ export function getSessionById(id: string): Session | null {
   return {
     id: row[0] as string,
     title: row[1] as string,
-    created_at: row[2] as string,
-    updated_at: row[3] as string,
+    model: row[2] as string || getSettings().model,
+    created_at: row[3] as string,
+    updated_at: row[4] as string,
   };
 }
 
@@ -86,6 +90,14 @@ export function updateSessionTitle(id: string, title: string): void {
   const now = new Date().toISOString();
   db.run('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?', [title, now, id]);
   // Don't save on every update
+}
+
+export function updateSessionModel(id: string, model: string): Session | null {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  db.run('UPDATE sessions SET model = ?, updated_at = ? WHERE id = ?', [model, now, id]);
+  saveDatabase();
+  return getSessionById(id);
 }
 
 export function deleteSession(id: string): void {

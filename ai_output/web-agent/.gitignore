@@ -1,6 +1,7 @@
-settings.local.json
-.playwright-mcp/
-node_modules/
 *.db
+settings.local.json
+node_modules/
+.playwright-mcp/
 .playwright-cli/
 .playwright/
+.specify/

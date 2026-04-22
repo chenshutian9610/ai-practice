@@ -30,10 +30,21 @@ export async function initDatabase(): Promise<Database> {
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      model TEXT DEFAULT 'gpt-3.5-turbo',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
+
+  // 迁移：如果 sessions 表没有 model 列，添加它
+  const columnsResult = db.exec("PRAGMA table_info(sessions)");
+  if (columnsResult.length > 0) {
+    const columnNames = columnsResult[0].values.map(row => row[1] as string);
+    if (!columnNames.includes('model')) {
+      db.run("ALTER TABLE sessions ADD COLUMN model TEXT DEFAULT 'gpt-3.5-turbo'");
+      console.log('Migrated sessions table: added model column');
+    }
+  }
 
   db.run(`
     CREATE TABLE IF NOT EXISTS messages (

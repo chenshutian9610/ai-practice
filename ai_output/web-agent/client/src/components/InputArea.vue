@@ -3,11 +3,13 @@ import { ref, computed } from 'vue';
 
 const props = defineProps<{
   disabled?: boolean;
+  streaming?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'submit', content: string): void;
   (e: 'file', file: File): void;
+  (e: 'stop'): void;
 }>();
 
 const inputText = ref('');
@@ -42,12 +44,11 @@ async function handleSubmit() {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
-  // Send with Ctrl+Enter (or Cmd+Enter on Mac)
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+  // Send with Enter (or Ctrl+Enter as alternative)
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     handleSubmit();
   }
-  // Shift+Enter for newline
 }
 
 function triggerFileUpload() {
@@ -85,7 +86,7 @@ function removeFile() {
         v-model="inputText"
         @keydown="handleKeyDown"
         @input="autoResize"
-        placeholder="输入消息，Ctrl+Enter 发送，Enter 换行"
+        :placeholder="streaming ? '停止输出，双击 Esc' : '输入消息，按 Enter 发送，Shift+Enter 换行'"
         rows="1"
         :disabled="disabled"
       ></textarea>
@@ -102,11 +103,10 @@ function removeFile() {
         </button>
         <button
           class="send-btn"
-          @click="handleSubmit"
-          :disabled="!canSubmit"
-          :class="{ sending: disabled }"
+          @click="streaming ? emit('stop') : handleSubmit"
+          :disabled="!streaming && !canSubmit"
         >
-          {{ disabled ? '发送中...' : '发送' }}
+          {{ streaming ? '⏹ 停止' : (disabled ? '发送中...' : '发送') }}
         </button>
       </div>
     </div>
@@ -187,6 +187,12 @@ textarea:disabled {
   align-items: center;
 }
 
+.send-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .action-btn {
   background: none;
   border: none;
@@ -209,6 +215,7 @@ textarea:disabled {
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
+  min-width: 80px;
 }
 
 .send-btn:hover:not(:disabled) {
@@ -218,9 +225,5 @@ textarea:disabled {
 .send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.send-btn.sending {
-  background: var(--accent-hover);
 }
 </style>

@@ -22,7 +22,16 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref<Record<string, Message[]>>({});
   const loading = ref(false);
   const streaming = ref(false);
+  const stopped = ref(false);
   const toolCalls = ref<Record<string, ToolCallStatus[]>>({});
+  let abortController: AbortController | null = null;
+
+  function stopStream() {
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+  }
 
   async function fetchMessages(sessionId: string) {
     loading.value = true;
@@ -88,6 +97,7 @@ export const useChatStore = defineStore('chat', () => {
     onToolEvent?: (event: ToolCallEvent) => void
   ) {
     streaming.value = true;
+    stopped.value = false;
     clearToolCalls(sessionId);
 
     // Add user message immediately
@@ -115,6 +125,9 @@ export const useChatStore = defineStore('chat', () => {
     let fullContent = '';
     let fullReasoning = '';
 
+    // Create abort controller for this request
+    abortController = new AbortController();
+
     try {
       await api.sendMessageStream(sessionId, content, (content, reasoning) => {
         fullContent += content;
@@ -136,13 +149,30 @@ export const useChatStore = defineStore('chat', () => {
         if (onToolEvent) {
           onToolEvent(event);
         }
-      });
+      }, abortController.signal);
     } catch (error) {
-      // Remove AI message on error
-      messages.value[sessionId] = messages.value[sessionId].filter(m => m.id !== aiMessageId);
-      throw error;
+      // Check if aborted - handle both browser and potential Node.js error types
+      const errorName = (error as Error).name;
+      const errorMessage = (error as Error).message || '';
+      const isAbortError =
+        errorName === 'AbortError' ||
+        errorName === 'CanceledError' ||
+        errorMessage.includes('abort') ||
+        errorMessage.includes('cancel') ||
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('network');
+
+      if (isAbortError) {
+        stopped.value = true;
+        // Keep the partial message content
+      } else {
+        // Remove AI message on other errors
+        messages.value[sessionId] = messages.value[sessionId].filter(m => m.id !== aiMessageId);
+        throw error;
+      }
     } finally {
       streaming.value = false;
+      abortController = null;
     }
   }
 
@@ -159,6 +189,7 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     loading,
     streaming,
+    stopped,
     fetchMessages,
     sendMessage,
     sendMessageWithStream,
@@ -166,5 +197,6 @@ export const useChatStore = defineStore('chat', () => {
     clearMessages,
     getToolCalls,
     clearToolCalls,
+    stopStream,
   };
 });

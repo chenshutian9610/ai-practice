@@ -6,6 +6,7 @@ import { initDatabase } from './services/database.js';
 import sessionRoutes from './routes/session.js';
 import chatRoutes from './routes/chat.js';
 import settingsRoutes from './routes/settings.js';
+import modelsRoutes from './routes/models.js';
 import { getMCPClientManager } from './mcp/manager.js';
 import * as models from './services/models.js';
 
@@ -168,6 +169,7 @@ async function startServer() {
   app.use('/api/sessions', sessionRoutes);
   app.use('/api/chat', chatRoutes);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/models', modelsRoutes);
 
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });

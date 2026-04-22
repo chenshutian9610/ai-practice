@@ -116,12 +116,13 @@ async function testConnection() {
         </div>
 
         <div class="form-item">
-          <label>Model</label>
+          <label>默认模型</label>
           <input
             v-model="localSettings.model"
             type="text"
             placeholder="gpt-3.5-turbo"
           />
+          <span class="hint">新聊天窗口默认使用的模型，可在聊天界面切换</span>
         </div>
 
         <div class="form-item">
