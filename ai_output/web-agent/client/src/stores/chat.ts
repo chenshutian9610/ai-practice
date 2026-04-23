@@ -2,6 +2,34 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import * as api from '../api/rest';
 import type { ToolCallEvent } from '../api/rest';
+import { useSessionStore } from './session';
+import { useSettingsStore } from './settings';
+
+export interface ToolCallLog {
+  name: string;
+  arguments: any;
+  result?: string;
+  error?: string;
+}
+
+export interface DebugInfo {
+  messageId: string;
+  request: {
+    model: string;
+    messages: Array<{ role: string; content: string }>;
+    tools?: Array<{ name: string; description?: string }>;
+  };
+  response: {
+    content: string;
+    reasoning?: string;
+    toolCalls?: Array<{
+      id: string;
+      name: string;
+      arguments: any;
+    }>;
+  };
+  toolCallLogs: ToolCallLog[];
+}
 
 export interface Message {
   id: string;
@@ -24,7 +52,9 @@ export const useChatStore = defineStore('chat', () => {
   const streaming = ref(false);
   const stopped = ref(false);
   const toolCalls = ref<Record<string, ToolCallStatus[]>>({});
+  const debugInfo = ref<Record<string, DebugInfo>>({});
   let abortController: AbortController | null = null;
+  let currentDebugInfo: DebugInfo | null = null;
 
   function stopStream() {
     if (abortController) {
@@ -90,6 +120,38 @@ export const useChatStore = defineStore('chat', () => {
     return toolCalls.value[sessionId] || [];
   }
 
+  function startDebugInfo(messageId: string, request: DebugInfo['request']) {
+    currentDebugInfo = {
+      messageId,
+      request,
+      response: { content: '', reasoning: '' },
+      toolCallLogs: [],
+    };
+  }
+
+  function updateDebugResponse(response: Partial<DebugInfo['response']>) {
+    if (currentDebugInfo) {
+      currentDebugInfo.response = { ...currentDebugInfo.response, ...response };
+    }
+  }
+
+  function addToolCallLog(log: ToolCallLog) {
+    if (currentDebugInfo) {
+      currentDebugInfo.toolCallLogs.push(log);
+    }
+  }
+
+  function finalizeDebugInfo() {
+    if (currentDebugInfo) {
+      debugInfo.value[currentDebugInfo.messageId] = currentDebugInfo;
+      currentDebugInfo = null;
+    }
+  }
+
+  function getDebugInfo(messageId: string): DebugInfo | null {
+    return debugInfo.value[messageId] || null;
+  }
+
   async function sendMessageWithStream(
     sessionId: string,
     content: string,
@@ -122,6 +184,23 @@ export const useChatStore = defineStore('chat', () => {
       created_at: new Date().toISOString(),
     });
 
+    // Build messages for debug info (get previous messages + current user message)
+    const sessionMessages = messages.value[sessionId]
+      .filter(m => m.id !== aiMessageId)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    // Get model from session or settings
+    const sessionStore = useSessionStore();
+    const settingsStore = useSettingsStore();
+    const currentModel = sessionStore.currentModel || settingsStore.settings.model;
+
+    // Build request for debug info
+    const debugRequest = {
+      model: currentModel,
+      messages: sessionMessages,
+    };
+    startDebugInfo(aiMessageId, debugRequest);
+
     let fullContent = '';
     let fullReasoning = '';
 
@@ -137,14 +216,24 @@ export const useChatStore = defineStore('chat', () => {
           lastMsg.content = fullContent;
           lastMsg.reasoning = fullReasoning;
         }
+        updateDebugResponse({ content: fullContent, reasoning: fullReasoning });
         onChunk(content, reasoning);
       }, (event) => {
         if (event.type === 'tool_call') {
           addToolCall(sessionId, event.tool);
+          addToolCallLog({ name: event.tool, arguments: event.input });
         } else if (event.type === 'tool_result') {
           updateToolCall(sessionId, event.tool, event.result);
+          if (currentDebugInfo && currentDebugInfo.toolCallLogs.length > 0) {
+            const lastLog = currentDebugInfo.toolCallLogs[currentDebugInfo.toolCallLogs.length - 1];
+            lastLog.result = event.result;
+          }
         } else if (event.type === 'tool_error') {
           updateToolCall(sessionId, event.tool, undefined, event.error);
+          if (currentDebugInfo && currentDebugInfo.toolCallLogs.length > 0) {
+            const lastLog = currentDebugInfo.toolCallLogs[currentDebugInfo.toolCallLogs.length - 1];
+            lastLog.error = event.error;
+          }
         }
         if (onToolEvent) {
           onToolEvent(event);
@@ -171,6 +260,7 @@ export const useChatStore = defineStore('chat', () => {
         throw error;
       }
     } finally {
+      finalizeDebugInfo();
       streaming.value = false;
       abortController = null;
     }
@@ -198,5 +288,7 @@ export const useChatStore = defineStore('chat', () => {
     getToolCalls,
     clearToolCalls,
     stopStream,
+    debugInfo,
+    getDebugInfo,
   };
 });
