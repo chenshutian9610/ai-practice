@@ -419,6 +419,7 @@ router.post('/stream', async (req, res) => {
     res.write(`data: ${JSON.stringify({
       type: 'debug_info',
       request: {
+        endpoint: settings.api_endpoint,
         model: finalModel,
         messages: messages,
         tools: llmTools,
