@@ -415,6 +415,16 @@ router.post('/stream', async (req, res) => {
     // 流式完成后更新 AI 消息内容
     models.updateMessageContent(assistantMessage.id, finalContent || fullContent, finalReasoning || fullReasoning);
 
+    // 发送调试信息
+    res.write(`data: ${JSON.stringify({
+      type: 'debug_info',
+      request: {
+        model: finalModel,
+        messages: messages,
+        tools: llmTools,
+      },
+    })}\n\n`);
+
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (error) {
