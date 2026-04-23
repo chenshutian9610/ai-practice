@@ -40,7 +40,7 @@ watch(messages, async () => {
           {{ message.role === 'user' ? '👤' : '🤖' }}
         </div>
         <div class="message-content">
-          <MessageItem :content="message.content" :reasoning="message.reasoning" :isStreaming="streaming && message === messages[messages.length - 1]" />
+          <MessageItem :content="message.content" :reasoning="message.reasoning" :isStreaming="streaming && message === messages[messages.length - 1]" :messageId="message.id" />
         </div>
       </div>
     </div>

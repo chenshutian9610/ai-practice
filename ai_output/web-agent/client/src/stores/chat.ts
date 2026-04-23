@@ -219,20 +219,25 @@ export const useChatStore = defineStore('chat', () => {
         updateDebugResponse({ content: fullContent, reasoning: fullReasoning });
         onChunk(content, reasoning);
       }, (event) => {
-        if (event.type === 'tool_call') {
+        if (event.type === 'tool_call' && event.tool) {
           addToolCall(sessionId, event.tool);
           addToolCallLog({ name: event.tool, arguments: event.input });
-        } else if (event.type === 'tool_result') {
+        } else if (event.type === 'tool_result' && event.tool) {
           updateToolCall(sessionId, event.tool, event.result);
           if (currentDebugInfo && currentDebugInfo.toolCallLogs.length > 0) {
             const lastLog = currentDebugInfo.toolCallLogs[currentDebugInfo.toolCallLogs.length - 1];
             lastLog.result = event.result;
           }
-        } else if (event.type === 'tool_error') {
+        } else if (event.type === 'tool_error' && event.tool) {
           updateToolCall(sessionId, event.tool, undefined, event.error);
           if (currentDebugInfo && currentDebugInfo.toolCallLogs.length > 0) {
             const lastLog = currentDebugInfo.toolCallLogs[currentDebugInfo.toolCallLogs.length - 1];
             lastLog.error = event.error;
+          }
+        } else if (event.type === 'debug_info') {
+          // Update debug info with request from backend (includes endpoint and tools)
+          if (currentDebugInfo && event.request) {
+            currentDebugInfo.request = event.request;
           }
         }
         if (onToolEvent) {
