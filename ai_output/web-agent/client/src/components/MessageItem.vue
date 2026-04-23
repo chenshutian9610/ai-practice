@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import hljs from 'highlight.js';
 import { useSettingsStore } from '../stores/settings';
 import { useChatStore } from '../stores/chat';
+import type { DebugInfo } from '../stores/chat';
 import DebugModal from './DebugModal.vue';
 
 const props = defineProps<{
@@ -88,22 +89,22 @@ async function copyContent() {
 
 // Debug functionality
 const settingsStore = useSettingsStore();
+const chatStore = useChatStore();
 const showDebugButton = ref(false);
 const debugModalVisible = ref(false);
-const debugInfo = ref<any>(null);
+const debugInfo = ref<DebugInfo | null>(null);
 
 function checkDebugData() {
   if (!settingsStore.settings.developerMode || !props.messageId) {
     showDebugButton.value = false;
     return;
   }
-  const chatStore = useChatStore();
   debugInfo.value = chatStore.getDebugInfo(props.messageId);
   showDebugButton.value = debugInfo.value !== null;
 }
 
 function openDebugModal() {
-  debugInfo.value = props.messageId ? useChatStore().getDebugInfo(props.messageId) : null;
+  debugInfo.value = props.messageId ? chatStore.getDebugInfo(props.messageId) : null;
   debugModalVisible.value = true;
 }
 
