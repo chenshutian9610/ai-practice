@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import hljs from 'highlight.js';
+import { useSettingsStore } from '../stores/settings';
+import { useChatStore } from '../stores/chat';
+import DebugModal from './DebugModal.vue';
 
 const props = defineProps<{
   content: string;
   reasoning?: string;
   isStreaming?: boolean;
+  messageId?: string;
 }>();
 
 const contentRef = ref<HTMLElement | null>(null);
@@ -82,6 +86,35 @@ async function copyContent() {
   }
 }
 
+// Debug functionality
+const settingsStore = useSettingsStore();
+const showDebugButton = ref(false);
+const debugModalVisible = ref(false);
+const debugInfo = ref<any>(null);
+
+function checkDebugData() {
+  if (!settingsStore.settings.developerMode || !props.messageId) {
+    showDebugButton.value = false;
+    return;
+  }
+  const chatStore = useChatStore();
+  debugInfo.value = chatStore.getDebugInfo(props.messageId);
+  showDebugButton.value = debugInfo.value !== null;
+}
+
+function openDebugModal() {
+  debugInfo.value = props.messageId ? useChatStore().getDebugInfo(props.messageId) : null;
+  debugModalVisible.value = true;
+}
+
+function closeDebugModal() {
+  debugModalVisible.value = false;
+}
+
+// Watch for changes
+watch(() => props.messageId, checkDebugData, { immediate: true });
+watch(() => settingsStore.settings.developerMode, checkDebugData);
+
 // Apply syntax highlighting after render
 function highlightCode(el: HTMLElement) {
   const codeBlocks = el.querySelectorAll('pre code');
@@ -130,6 +163,24 @@ onMounted(() => {
     >
       {{ copied ? '✓' : '📋' }}
     </button>
+
+    <button
+      v-if="showDebugButton"
+      class="debug-btn"
+      @click="openDebugModal"
+      title="调试信息"
+    >
+      🔍
+    </button>
+
+    <DebugModal
+      v-if="debugModalVisible"
+      :visible="debugModalVisible"
+      :request="debugInfo?.request || null"
+      :response="debugInfo?.response || null"
+      :toolCallLogs="debugInfo?.toolCallLogs || []"
+      @close="closeDebugModal"
+    />
 
     <span v-if="isStreaming" class="typing-indicator">
       <span></span><span></span><span></span>
@@ -237,6 +288,27 @@ onMounted(() => {
 }
 
 .copy-float-btn:hover {
+  opacity: 1 !important;
+}
+
+.debug-btn {
+  position: absolute;
+  top: -4px;
+  right: -48px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.3;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.message-item:hover .debug-btn {
+  opacity: 0.7;
+}
+
+.debug-btn:hover {
   opacity: 1 !important;
 }
 
