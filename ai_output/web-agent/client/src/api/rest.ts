@@ -52,12 +52,18 @@ export async function sendMessage(sessionId: string, content: string) {
 }
 
 export interface ToolCallEvent {
-  type: 'tool_call' | 'tool_result' | 'tool_error';
-  tool: string;
-  toolCallId: string;
+  type: 'tool_call' | 'tool_result' | 'tool_error' | 'debug_info';
+  tool?: string;
+  toolCallId?: string;
   input?: Record<string, unknown>;
   result?: string;
   error?: string;
+  request?: {
+    endpoint?: string;
+    model: string;
+    messages: Array<{ role: string; content: string }>;
+    tools?: any[];
+  };
 }
 
 export async function sendMessageStream(
@@ -117,6 +123,17 @@ export async function sendMessageStream(
               input: parsed.input,
               result: parsed.result,
               error: parsed.error,
+            });
+          }
+          continue;
+        }
+
+        // Debug info
+        if (parsed.type === 'debug_info') {
+          if (onToolEvent) {
+            onToolEvent({
+              type: 'debug_info',
+              request: parsed.request,
             });
           }
           continue;
