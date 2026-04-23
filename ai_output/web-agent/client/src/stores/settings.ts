@@ -18,6 +18,7 @@ export interface Settings {
   model: string;
   system_prompt: string;
   theme: string;
+  developerMode: boolean;
 }
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -27,6 +28,7 @@ export const useSettingsStore = defineStore('settings', () => {
     model: 'gpt-3.5-turbo',
     system_prompt: '',
     theme: 'light',
+    developerMode: false,
   });
 
   const mcpServers = ref<MCPServerConfig[]>([]);
