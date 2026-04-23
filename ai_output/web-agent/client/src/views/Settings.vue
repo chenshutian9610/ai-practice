@@ -42,6 +42,10 @@ function setTheme(theme: string) {
   settingsStore.updateSettings({ theme });
 }
 
+function updateSettings(partial: Partial<typeof settings.value>) {
+  settingsStore.updateSettings(partial);
+}
+
 async function testConnection() {
   if (!localSettings.value.api_endpoint || !localSettings.value.api_key) {
     testResult.value = { success: false, message: '请填写 API Endpoint 和 API Key' };
@@ -172,6 +176,25 @@ async function testConnection() {
               🌙 深色
             </button>
           </div>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>开发者选项</h3>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>开发者模式</span>
+            <span class="setting-description">开启后在 AI 消息旁显示调试按钮</span>
+          </div>
+          <label class="toggle">
+            <input
+              type="checkbox"
+              :checked="settings.developerMode"
+              @change="updateSettings({ developerMode: ($event.target as HTMLInputElement).checked })"
+            />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
 
@@ -371,5 +394,79 @@ async function testConnection() {
 .save-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting-item:last-child {
+  border-bottom: none;
+}
+
+.setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-label span:first-child {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.setting-description {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-tertiary);
+  border-radius: 24px;
+  transition: 0.3s;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle input:checked + .toggle-slider {
+  background: var(--accent);
+}
+
+.toggle input:checked + .toggle-slider:before {
+  transform: translateX(24px);
 }
 </style>
