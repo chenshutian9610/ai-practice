@@ -146,7 +146,7 @@ export async function* chatStream(
   messages: ChatMessage[],
   tools?: ToolDefinition[],
   signal?: AbortSignal
-): AsyncGenerator<{ content: string; reasoning: string }> {
+): AsyncGenerator<{ content: string; reasoning: string; toolCalls?: ToolCall[] }> {
   console.log('chatStream: starting');
   if (!config.endpoint || !config.apiKey) {
     throw new Error('LLM not configured. Please set API endpoint and key in settings.');
@@ -161,6 +161,9 @@ export async function* chatStream(
     aborted = true;
   };
   signal?.addEventListener('abort', abortHandler);
+
+  // Buffer for assembling tool calls across chunks
+  const toolCallBuffer: Map<string, { id: string; name: string; arguments: string }> = new Map();
 
   try {
     const baseUrl = config.endpoint.replace(/\/$/, '');
@@ -316,11 +319,48 @@ export async function* chatStream(
 
         try {
           const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content || '';
-          const reasoning = parsed.choices?.[0]?.delta?.reasoning_content || '';
-          if (content || reasoning) {
+          const delta = parsed.choices?.[0]?.delta || {};
+
+          // Log full delta if it has content
+          if (delta.content || delta.reasoning_content || delta.tool_calls) {
+            console.log('chatStream: delta keys:', Object.keys(delta));
+            if (delta.tool_calls) {
+              console.log('chatStream: got tool_calls delta:', JSON.stringify(delta.tool_calls).slice(0, 200));
+            }
+          }
+
+          const content = delta.content || '';
+          const reasoning = delta.reasoning_content || '';
+
+          // Extract tool calls from delta
+          let toolCalls: ToolCall[] | undefined;
+          if (delta.tool_calls && delta.tool_calls.length > 0) {
+            for (const tc of delta.tool_calls) {
+              const id = tc.index?.toString() || tc.id || '';
+              if (!toolCallBuffer.has(id)) {
+                toolCallBuffer.set(id, { id, name: '', arguments: '' });
+              }
+              const buffered = toolCallBuffer.get(id)!;
+              if (tc.function?.name) {
+                buffered.name = tc.function.name;
+              }
+              if (tc.function?.arguments) {
+                buffered.arguments += tc.function.arguments;
+              }
+            }
+            // Convert buffer to ToolCall array
+            toolCalls = Array.from(toolCallBuffer.values())
+              .filter(tc => tc.name && tc.arguments)
+              .map(tc => ({
+                id: tc.id,
+                name: tc.name,
+                arguments: JSON.parse(tc.arguments),
+              }));
+          }
+
+          if (content || reasoning || toolCalls) {
             console.log('chatStream: yielding chunk');
-            yield { content, reasoning };
+            yield { content, reasoning, toolCalls };
           }
         } catch (e) {
           // Skip invalid JSON

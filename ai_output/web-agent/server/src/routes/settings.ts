@@ -16,6 +16,7 @@ router.get('/', (req, res) => {
       model: settings.model,
       system_prompt: settings.system_prompt,
       theme: settings.theme,
+      developerMode: settings.developerMode,
     });
   } catch (error) {
     res.status(500).json({ error: String(error) });
@@ -25,7 +26,7 @@ router.get('/', (req, res) => {
 // 更新设置
 router.put('/', (req, res) => {
   try {
-    const { api_endpoint, api_key, model, system_prompt, theme } = req.body;
+    const { api_endpoint, api_key, model, system_prompt, theme, developerMode } = req.body;
 
     const updates: Partial<models.Settings> = {};
 
@@ -34,6 +35,7 @@ router.put('/', (req, res) => {
     if (model !== undefined) updates.model = model;
     if (system_prompt !== undefined) updates.system_prompt = system_prompt;
     if (theme !== undefined) updates.theme = theme;
+    if (developerMode !== undefined) updates.developerMode = developerMode;
 
     const settings = models.updateSettings(updates);
 
@@ -42,6 +44,7 @@ router.put('/', (req, res) => {
       model: settings.model,
       system_prompt: settings.system_prompt,
       theme: settings.theme,
+      developerMode: settings.developerMode,
     });
   } catch (error) {
     res.status(500).json({ error: String(error) });

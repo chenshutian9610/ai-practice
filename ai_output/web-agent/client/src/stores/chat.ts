@@ -201,6 +201,29 @@ export const useChatStore = defineStore('chat', () => {
     };
     startDebugInfo(aiMessageId, debugRequest);
 
+    // Track the current message ID (may be updated from temp to real ID)
+    let currentMessageId = aiMessageId;
+
+    // Function to handle real message ID from backend
+    function handleMessageId(newId: string) {
+      if (newId !== currentMessageId) {
+        // Update message in array
+        const msgArray = messages.value[sessionId];
+        const msgIndex = msgArray.findIndex(m => m.id === currentMessageId);
+        if (msgIndex !== -1) {
+          msgArray[msgIndex].id = newId;
+        }
+        // Update debug info key
+        if (currentDebugInfo && currentDebugInfo.messageId === currentMessageId) {
+          const debugData = { ...currentDebugInfo, messageId: newId };
+          debugInfo.value[newId] = debugData;
+          delete debugInfo.value[currentMessageId];
+          currentDebugInfo = debugData;
+        }
+        currentMessageId = newId;
+      }
+    }
+
     let fullContent = '';
     let fullReasoning = '';
 
@@ -211,7 +234,7 @@ export const useChatStore = defineStore('chat', () => {
       await api.sendMessageStream(sessionId, content, (content, reasoning) => {
         fullContent += content;
         fullReasoning += reasoning;
-        const lastMsg = messages.value[sessionId].find(m => m.id === aiMessageId);
+        const lastMsg = messages.value[sessionId].find(m => m.id === currentMessageId);
         if (lastMsg) {
           lastMsg.content = fullContent;
           lastMsg.reasoning = fullReasoning;
@@ -239,11 +262,13 @@ export const useChatStore = defineStore('chat', () => {
           if (currentDebugInfo && event.request) {
             currentDebugInfo.request = event.request;
           }
+          // Finalize debug info when we receive debug_info event from backend
+          finalizeDebugInfo();
         }
         if (onToolEvent) {
           onToolEvent(event);
         }
-      }, abortController.signal);
+      }, abortController.signal, handleMessageId);
     } catch (error) {
       // Check if aborted - handle both browser and potential Node.js error types
       const errorName = (error as Error).name;
@@ -259,13 +284,18 @@ export const useChatStore = defineStore('chat', () => {
       if (isAbortError) {
         stopped.value = true;
         // Keep the partial message content
+        finalizeDebugInfo();
       } else {
         // Remove AI message on other errors
-        messages.value[sessionId] = messages.value[sessionId].filter(m => m.id !== aiMessageId);
+        messages.value[sessionId] = messages.value[sessionId].filter(m => m.id !== currentMessageId);
+        finalizeDebugInfo();
         throw error;
       }
     } finally {
-      finalizeDebugInfo();
+      // Finalize debug info if not already done (fallback for error cases)
+      if (currentDebugInfo) {
+        finalizeDebugInfo();
+      }
       streaming.value = false;
       abortController = null;
     }

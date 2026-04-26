@@ -64,6 +64,7 @@ export interface ToolCallEvent {
     messages: Array<{ role: string; content: string }>;
     tools?: any[];
   };
+  messageId?: string;
 }
 
 export async function sendMessageStream(
@@ -71,7 +72,8 @@ export async function sendMessageStream(
   content: string,
   onChunk: (chunk: string, reasoning: string) => void,
   onToolEvent?: (event: ToolCallEvent) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onMessageId?: (messageId: string) => void
 ) {
   const apiKey = localStorage.getItem('api_key') || '';
   const res = await fetch(`${API_BASE}/chat/stream`, {
@@ -142,6 +144,11 @@ export async function sendMessageStream(
         // Regular text content
         if (parsed.content || parsed.reasoning) {
           onChunk(parsed.content || '', parsed.reasoning || '');
+        }
+
+        // Message ID update (sent with each chunk from backend)
+        if (parsed.messageId && onMessageId) {
+          onMessageId(parsed.messageId);
         }
       } catch {
         // Skip invalid lines

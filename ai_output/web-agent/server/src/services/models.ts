@@ -33,6 +33,7 @@ export interface Settings {
   model: string;
   system_prompt: string;
   theme: string;
+  developerMode: boolean;
   mcpServers: MCPServerConfig[];
 }
 
@@ -164,7 +165,7 @@ export function updateMessageContent(id: string, content: string, reasoning: str
 
 export function getSettings(): Settings {
   const db = getDatabase();
-  const result = db.exec('SELECT id, api_endpoint, api_key, model, system_prompt, theme, mcp_servers FROM settings WHERE id = 1');
+  const result = db.exec('SELECT id, api_endpoint, api_key, model, system_prompt, theme, developer_mode, mcp_servers FROM settings WHERE id = 1');
 
   if (result.length === 0 || result[0].values.length === 0) {
     return {
@@ -174,6 +175,7 @@ export function getSettings(): Settings {
       model: 'gpt-3.5-turbo',
       system_prompt: '',
       theme: 'light',
+      developerMode: false,
       mcpServers: [],
     };
   }
@@ -181,7 +183,7 @@ export function getSettings(): Settings {
   const row = result[0].values[0];
   let mcpServers: MCPServerConfig[] = [];
   try {
-    mcpServers = JSON.parse((row[6] as string) || '[]');
+    mcpServers = JSON.parse((row[7] as string) || '[]');
   } catch {
     mcpServers = [];
   }
@@ -192,6 +194,7 @@ export function getSettings(): Settings {
     model: row[3] as string,
     system_prompt: row[4] as string,
     theme: row[5] as string,
+    developerMode: Boolean(row[6]),
     mcpServers,
   };
 }
@@ -206,13 +209,14 @@ export function updateSettings(settings: Partial<Omit<Settings, 'id' | 'mcpServe
   };
 
   db.run(
-    'UPDATE settings SET api_endpoint = ?, api_key = ?, model = ?, system_prompt = ?, theme = ?, mcp_servers = ? WHERE id = 1',
+    'UPDATE settings SET api_endpoint = ?, api_key = ?, model = ?, system_prompt = ?, theme = ?, developer_mode = ?, mcp_servers = ? WHERE id = 1',
     [
       newSettings.api_endpoint,
       newSettings.api_key,
       newSettings.model,
       newSettings.system_prompt,
       newSettings.theme,
+      newSettings.developerMode ? 1 : 0,
       JSON.stringify(newSettings.mcpServers || []),
     ]
   );

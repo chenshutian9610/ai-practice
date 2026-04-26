@@ -18,14 +18,14 @@ interface ToolCallResult {
 }
 
 // Convert MCP tools to LLM tool format (OpenAI-compatible format)
-function convertToolsForLLM(tools: Array<MCPTool & { serverId: string; serverName: string }>): { type: string; function: { name: string; description?: string; parameters: { type: string; properties: Record<string, unknown>; required?: string[] } } }[] {
+function convertToolsForLLM(tools: Array<MCPTool & { serverId: string; serverName: string }>): Array<{ type: 'function'; function: { name: string; description?: string; parameters: { type: 'object'; properties: Record<string, unknown>; required?: string[] } } }> {
   return tools.map(tool => ({
-    type: 'function',
+    type: 'function' as const,
     function: {
       name: tool.name,
       description: tool.description || `Tool from ${tool.serverName}`,
       parameters: {
-        type: 'object',
+        type: 'object' as const,
         properties: (tool.inputSchema?.properties as Record<string, unknown>) || {},
         required: tool.inputSchema?.required || [],
       },
@@ -241,9 +241,9 @@ router.post('/stream', async (req, res) => {
       models.updateSessionTitle(sessionId, title);
     }
 
-    // 初始化 MCP 客户端 - 临时禁用以测试
+    // 初始化 MCP 客户端
     const mcpManager = getMCPClientManager();
-    const tools = []; // mcpManager.isInitialized() ? mcpManager.getAllTools() : [];
+    const tools = mcpManager.isInitialized() ? mcpManager.getAllTools() : [];
     const llmTools = tools.length > 0 ? convertToolsForLLM(tools) : undefined;
     console.log('llmTools:', llmTools ? 'enabled' : 'disabled');
 
@@ -263,19 +263,24 @@ router.post('/stream', async (req, res) => {
     // 工具调用循环
     let iteration = 0;
     let hasToolCalls = false;
+    let toolsJustExecuted = false; // 标记工具是否刚刚执行过（需要让模型处理结果）
     let lastToolCalls: ToolCall[] = [];
     let finalContent = '';
     let finalReasoning = '';
     let currentToolCalls: ToolCall[] = [];
     let fullContent = '';
     let fullReasoning = '';
+    let streamedToolCalls: ToolCall[] = [];
 
     do {
       iteration++;
-      hasToolCalls = false;
+      console.log('Loop iteration:', iteration, 'hasToolCalls:', hasToolCalls, 'toolsJustExecuted:', toolsJustExecuted);
+      console.log('About to call chatStream...');
       // Reset content for this iteration
       fullContent = '';
       fullReasoning = '';
+      streamedToolCalls = [];
+      toolsJustExecuted = false; // 重置标记
 
       try {
         for await (const chunk of chatStream(
@@ -294,9 +299,16 @@ router.post('/stream', async (req, res) => {
           }
           fullContent += chunk.content;
           fullReasoning += chunk.reasoning;
+
+          // Collect tool calls from stream
+          if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+            streamedToolCalls.push(...chunk.toolCalls);
+          }
+
           res.write(`data: ${JSON.stringify({ content: chunk.content, reasoning: chunk.reasoning, messageId: assistantMessage.id })}\n\n`);
           res.flush?.(); // 确保数据立即发送
         }
+        console.log('chatStream completed, streamedToolCalls:', streamedToolCalls.length);
       } catch (error) {
         // 处理 AbortError
         if ((error as Error).name === 'AbortError') {
@@ -315,106 +327,108 @@ router.post('/stream', async (req, res) => {
       if (!llmTools || llmTools.length === 0) {
         finalContent = fullContent;
         finalReasoning = fullReasoning;
-        break;
-      }
-
-      // 检查是否有工具调用
-      // 由于流式响应无法直接获取 tool_calls，我们需要使用非流式调用来获取
-      const llmResponse = await chat(
-        {
-          endpoint: settings.api_endpoint,
-          apiKey: finalApiKey,
-          model: finalModel,
-        },
-        messages,
-        llmTools
-      );
-
-      if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
-        hasToolCalls = true;
-        currentToolCalls = llmResponse.toolCalls;
-        lastToolCalls = llmResponse.toolCalls;
-        fullContent = llmResponse.content;
-
-        // 发送工具调用事件
-        for (const tc of currentToolCalls) {
-          res.write(`data: ${JSON.stringify({
-            type: 'tool_call',
-            tool: tc.name,
-            toolCallId: tc.id,
-            input: tc.arguments,
-          })}\n\n`);
-        }
-
-        // 执行工具调用
-        const toolPromises = currentToolCalls.map(async (tc: ToolCall) => {
-          try {
-            const { result, serverName } = await mcpManager.callTool(tc.name, tc.arguments);
-            const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
-            res.write(`data: ${JSON.stringify({
-              type: 'tool_result',
-              tool: tc.name,
-              toolCallId: tc.id,
-              result: resultStr,
-            })}\n\n`);
-            return {
-              toolCallId: tc.id,
-              toolName: tc.name,
-              result: resultStr,
-              error: undefined,
-            };
-          } catch (error) {
-            const errorMsg = String(error);
-            res.write(`data: ${JSON.stringify({
-              type: 'tool_error',
-              tool: tc.name,
-              toolCallId: tc.id,
-              error: errorMsg,
-            })}\n\n`);
-            return {
-              toolCallId: tc.id,
-              toolName: tc.name,
-              result: '',
-              error: errorMsg,
-            };
-          }
-        });
-
-        const toolCallResults = await Promise.all(toolPromises);
-
-        // 将 LLM 回复和工具调用结果添加到消息上下文
-        messages.push({ role: 'assistant', content: fullContent });
-        const toolResultsContent = toolCallResults.map(r =>
-          r.error
-            ? `Tool "${r.toolName}" error: ${r.error}`
-            : `Tool "${r.toolName}" result: ${r.result}`
-        ).join('\n');
-        messages.push({
-          role: 'user',
-          content: `Tool results:\n${toolResultsContent}`,
-        });
+        // 仍然继续执行到循环外发送 debug_info
       } else {
-        // 没有更多工具调用，保存最终内容
-        finalContent = fullContent;
-        finalReasoning = fullReasoning;
-        break;
-      }
-    } while (hasToolCalls && iteration < MAX_TOOL_CALL_ITERATIONS && !clientDisconnected && !res.writableEnded);
+        // 使用流式响应中收集到的工具调用
+        const currentToolCalls = streamedToolCalls;
 
-    // 检查客户端是否已断开
-    if (clientDisconnected || res.writableEnded) {
-      // 保存已生成的部分内容
-      const partialContent = fullContent || '';
-      if (partialContent) {
-        models.updateMessageContent(assistantMessage.id, partialContent, fullReasoning);
+        console.log('Checking tool calls, count:', currentToolCalls?.length || 0);
+        if (currentToolCalls && currentToolCalls.length > 0) {
+          hasToolCalls = true;
+          console.log('Tool calls found, hasToolCalls set to true');
+          lastToolCalls = currentToolCalls;
+
+          // 发送工具调用事件
+          for (const tc of currentToolCalls) {
+            res.write(`data: ${JSON.stringify({
+              type: 'tool_call',
+              tool: tc.name,
+              toolCallId: tc.id,
+              input: tc.arguments,
+            })}\n\n`);
+          }
+
+          // 执行工具调用
+          const toolPromises = currentToolCalls.map(async (tc: ToolCall) => {
+            try {
+              const { result, serverName } = await mcpManager.callTool(tc.name, tc.arguments);
+              const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+              res.write(`data: ${JSON.stringify({
+                type: 'tool_result',
+                tool: tc.name,
+                toolCallId: tc.id,
+                result: resultStr,
+              })}\n\n`);
+              return {
+                toolCallId: tc.id,
+                toolName: tc.name,
+                result: resultStr,
+                error: undefined,
+              };
+            } catch (error) {
+              const errorMsg = String(error);
+              res.write(`data: ${JSON.stringify({
+                type: 'tool_error',
+                tool: tc.name,
+                toolCallId: tc.id,
+                error: errorMsg,
+              })}\n\n`);
+              return {
+                toolCallId: tc.id,
+                toolName: tc.name,
+                result: '',
+                error: errorMsg,
+              };
+            }
+          });
+
+          const toolCallResults = await Promise.all(toolPromises);
+
+          // 将 LLM 回复和工具调用结果添加到消息上下文
+          messages.push({ role: 'assistant', content: fullContent });
+          const toolResultsContent = toolCallResults.map(r =>
+            r.error
+              ? `Tool "${r.toolName}" error: ${r.error}`
+              : `Tool "${r.toolName}" result: ${r.result}`
+          ).join('\n');
+          messages.push({
+            role: 'user',
+            content: `Tool results:\n${toolResultsContent}`,
+          });
+
+          // 标记工具刚执行过，确保循环继续让模型处理结果
+          toolsJustExecuted = true;
+          console.log('Tools executed, toolsJustExecuted set to true');
+          console.log('Stream status before loop condition: res.writableEnded=', res.writableEnded, 'clientDisconnected=', clientDisconnected);
+        } else {
+          // 没有更多工具调用，保存最终内容
+          finalContent = fullContent;
+          finalReasoning = fullReasoning;
+          console.log('No more tool calls, breaking loop');
+          break;
+        }
       }
-      // 不要发送任何内容，直接结束
+    } while (
+      (hasToolCalls || toolsJustExecuted) && // 有新工具调用 或 工具刚执行过（需要让模型处理结果）
+      iteration < MAX_TOOL_CALL_ITERATIONS &&
+      (toolsJustExecuted || (!clientDisconnected && !res.writableEnded)) // 如果工具刚执行过，忽略断开状态
+    );
+
+    // 注意: clientDisconnected 在流结束后可能为 true (因为客户端关闭了 SSE 连接)
+    // 但只要有内容，我们仍然应该发送 debug_info
+
+    // 检查客户端是否已断开且没有任何内容
+    if ((clientDisconnected || res.writableEnded) && !fullContent && !finalContent) {
+      // 没有内容，直接结束
       return;
     }
+
+    // 有内容的情况下，即使 clientDisconnected 也要发送 debug_info
 
     // 流式完成后更新 AI 消息内容
     models.updateMessageContent(assistantMessage.id, finalContent || fullContent, finalReasoning || fullReasoning);
 
+    console.log('DEBUG: Sending debug_info, llmTools:', llmTools ? 'enabled' : 'disabled');
     // 发送调试信息
     res.write(`data: ${JSON.stringify({
       type: 'debug_info',

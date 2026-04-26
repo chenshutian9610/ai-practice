@@ -66,9 +66,20 @@ export async function initDatabase(): Promise<Database> {
       model TEXT DEFAULT 'gpt-3.5-turbo',
       system_prompt TEXT DEFAULT '',
       theme TEXT DEFAULT 'light',
+      developer_mode INTEGER DEFAULT 0,
       mcp_servers TEXT DEFAULT '[]'
     )
   `);
+
+  // 迁移：如果 settings 表没有 developer_mode 列，添加它
+  const settingsColumnsResult = db.exec("PRAGMA table_info(settings)");
+  if (settingsColumnsResult.length > 0) {
+    const settingsColumnNames = settingsColumnsResult[0].values.map(row => row[1] as string);
+    if (!settingsColumnNames.includes('developer_mode')) {
+      db.run("ALTER TABLE settings ADD COLUMN developer_mode INTEGER DEFAULT 0");
+      console.log('Migrated settings table: added developer_mode column');
+    }
+  }
 
   // 初始化 settings 表（如果为空）
   const result = db.exec('SELECT COUNT(*) as count FROM settings');
