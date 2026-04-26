@@ -4,7 +4,6 @@
 工具:
   - playwright-cli
   - superpowers
-  - frontend-design
     - /superpowers:brainstorm 
     - /superpowers:write-plan
 ---

@@ -1,50 +1,124 @@
+/* Chat UI - Editorial Literary Theme */
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f5f5;
-  --bg-tertiary: #ebebeb;
-  --text-primary: #333333;
-  --text-secondary: #666666;
-  --text-muted: #999999;
-  --accent: #007acc;
-  --accent-hover: #005fa3;
-  --border: #e0e0e0;
-  --shadow: rgba(0, 0, 0, 0.1);
-  --user-msg-bg: #007acc;
+  /* Base colors - Warm paper tones */
+  --bg-primary: #faf9f7;
+  --bg-secondary: #f5f3f0;
+  --bg-tertiary: #ebe8e4;
+  --bg-elevated: #ffffff;
+  --text-primary: #2d2a26;
+  --text-secondary: #5c5852;
+  --text-muted: #8a857d;
+
+  /* Accent palette - Warm Amber (AI) & Deep Teal (User) */
+  --accent-ai: #c49a6c;
+  --accent-ai-glow: rgba(196, 154, 108, 0.12);
+  --accent-ai-soft: #a88456;
+  --accent-user: #3d8888;
+  --accent-user-glow: rgba(61, 136, 136, 0.12);
+  --accent-user-soft: #357575;
+
+  /* Legacy accent (for compatibility) */
+  --accent: var(--accent-ai);
+  --accent-hover: var(--accent-ai-soft);
+
+  /* Borders & Shadows */
+  --border: #e0dcd6;
+  --border-subtle: #ede9e4;
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.1);
+  --shadow-glow-ai: 0 4px 20px var(--accent-ai-glow);
+  --shadow-glow-user: 0 4px 20px var(--accent-user-glow);
+
+  /* Message backgrounds */
+  --user-msg-bg: linear-gradient(135deg, #357575 0%, #3d8888 100%);
+  --user-msg-bg-solid: #3d8888;
   --user-msg-text: #ffffff;
-  --ai-msg-bg: #f0f0f0;
-  --ai-msg-text: #333333;
-  --code-bg: #f5f5f5;
-  --code-text: #333333;
+  --ai-msg-bg: #ffffff;
+  --ai-msg-text: #2d2a26;
+  --ai-msg-border: #e8e4df;
+
+  /* Code styling */
+  --code-bg: #f5f3f0;
+  --code-text: #2d2a26;
+  --code-border: #e0dcd6;
+
+  /* Selection */
+  --selection-bg: var(--accent-ai);
+  --selection-text: #ffffff;
 }
 
 :root.dark {
-  --bg-primary: #1e1e1e;
-  --bg-secondary: #2d2d2d;
-  --bg-tertiary: #3d3d3d;
-  --text-primary: #e0e0e0;
-  --text-secondary: #a0a0a0;
-  --text-muted: #707070;
-  --accent: #4da6ff;
-  --accent-hover: #3d8ad9;
-  --border: #404040;
-  --shadow: rgba(0, 0, 0, 0.3);
-  --user-msg-bg: #4da6ff;
+  /* Base colors */
+  --bg-primary: #121212;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #252525;
+  --bg-elevated: #2a2a2a;
+  --text-primary: #e8e4df;
+  --text-secondary: #a8a4a0;
+  --text-muted: #6b6763;
+
+  /* Accent palette - Warm Amber (AI) & Deep Teal (User) */
+  --accent-ai: #d4a574;
+  --accent-ai-glow: rgba(212, 165, 116, 0.15);
+  --accent-ai-soft: #b8956a;
+  --accent-user: #4a9e9e;
+  --accent-user-glow: rgba(74, 158, 158, 0.15);
+  --accent-user-soft: #3d8888;
+
+  /* Legacy accent (for compatibility) */
+  --accent: var(--accent-ai);
+  --accent-hover: var(--accent-ai-soft);
+
+  /* Borders & Shadows */
+  --border: #333333;
+  --border-subtle: #2a2a2a;
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow-ai: 0 4px 20px var(--accent-ai-glow);
+  --shadow-glow-user: 0 4px 20px var(--accent-user-glow);
+
+  /* Message backgrounds */
+  --user-msg-bg: linear-gradient(135deg, #3d8888 0%, #4a9e9e 100%);
+  --user-msg-bg-solid: #4a9e9e;
   --user-msg-text: #ffffff;
-  --ai-msg-bg: #3d3d3d;
-  --ai-msg-text: #e0e0e0;
-  --code-bg: #2d2d2d;
-  --code-text: #e0e0e0;
+  --ai-msg-bg: #1e1e1e;
+  --ai-msg-text: #e8e4df;
+  --ai-msg-border: #333333;
+
+  /* Code styling */
+  --code-bg: #141414;
+  --code-text: #e8e4df;
+  --code-border: #2a2a2a;
+
+  /* Selection */
+  --selection-bg: var(--accent-ai);
+  --selection-text: #121212;
 }
 
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: 'Crimson Pro', Georgia, 'Times New Roman', serif;
+  font-size: 16px;
+  line-height: 1.6;
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #app {
   height: 100%;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom selection colors */
+::selection {
+  background: var(--selection-bg);
+  color: var(--selection-text);
 }

@@ -1,19 +1,49 @@
+/* Chat UI - Editorial Literary Theme */
 :root,
 :root.dark {
-  --bg-primary: #1e1e1e;
-  --bg-secondary: #2d2d2d;
-  --bg-tertiary: #3d3d3d;
-  --text-primary: #e0e0e0;
-  --text-secondary: #a0a0a0;
-  --text-muted: #707070;
-  --accent: #4da6ff;
-  --accent-hover: #3d8ad9;
-  --border: #404040;
-  --shadow: rgba(0, 0, 0, 0.3);
-  --user-msg-bg: #4da6ff;
+  /* Base colors */
+  --bg-primary: #121212;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #252525;
+  --bg-elevated: #2a2a2a;
+  --text-primary: #e8e4df;
+  --text-secondary: #a8a4a0;
+  --text-muted: #6b6763;
+
+  /* Accent palette - Warm Amber (AI) & Deep Teal (User) */
+  --accent-ai: #d4a574;
+  --accent-ai-glow: rgba(212, 165, 116, 0.15);
+  --accent-ai-soft: #b8956a;
+  --accent-user: #4a9e9e;
+  --accent-user-glow: rgba(74, 158, 158, 0.15);
+  --accent-user-soft: #3d8888;
+
+  /* Legacy accent (for compatibility) */
+  --accent: var(--accent-ai);
+  --accent-hover: var(--accent-ai-soft);
+
+  /* Borders & Shadows */
+  --border: #333333;
+  --border-subtle: #2a2a2a;
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow-ai: 0 4px 20px var(--accent-ai-glow);
+  --shadow-glow-user: 0 4px 20px var(--accent-user-glow);
+
+  /* Message backgrounds */
+  --user-msg-bg: linear-gradient(135deg, #3d8888 0%, #4a9e9e 100%);
+  --user-msg-bg-solid: #4a9e9e;
   --user-msg-text: #ffffff;
-  --ai-msg-bg: #3d3d3d;
-  --ai-msg-text: #e0e0e0;
-  --code-bg: #2d2d2d;
-  --code-text: #e0e0e0;
+  --ai-msg-bg: #1e1e1e;
+  --ai-msg-text: #e8e4df;
+  --ai-msg-border: #333333;
+
+  /* Code styling */
+  --code-bg: #141414;
+  --code-text: #e8e4df;
+  --code-border: #2a2a2a;
+
+  /* Selection */
+  --selection-bg: var(--accent-ai);
+  --selection-text: #121212;
 }
