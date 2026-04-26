@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 
 export interface ToolCallStatus {
   tool: string;
@@ -13,28 +13,45 @@ const props = defineProps<{
 }>();
 
 const visible = ref(true);
+let hideTimeout: ReturnType<typeof setTimeout> | null = null;
 
-// Auto-hide after a few seconds
+function startHideTimer() {
+  if (hideTimeout) clearTimeout(hideTimeout);
+  hideTimeout = setTimeout(() => {
+    visible.value = false;
+  }, 3000);
+}
+
 watch(() => props.toolCalls.length, (newLen, oldLen) => {
   if (newLen > oldLen) {
     visible.value = true;
+    startHideTimer();
   }
+});
+
+onMounted(() => {
+  startHideTimer();
+});
+
+onUnmounted(() => {
+  if (hideTimeout) clearTimeout(hideTimeout);
 });
 </script>
 
 <template>
-  <div v-if="toolCalls.length > 0" class="tool-call-indicator">
-    <div class="indicator-header">
-      <span class="indicator-title">Tool Calls</span>
-    </div>
-    <div class="tool-list">
-      <div
-        v-for="(call, index) in toolCalls"
-        :key="index"
-        class="tool-item"
-        :class="call.status"
-      >
-        <div class="tool-header">
+  <Transition name="fade">
+    <div v-if="visible && toolCalls.length > 0" class="tool-call-toast">
+      <div class="toast-header">
+        <span class="toast-title">Tool Calls</span>
+        <span class="toast-count">{{ toolCalls.length }}</span>
+      </div>
+      <div class="tool-list">
+        <div
+          v-for="(call, index) in toolCalls"
+          :key="index"
+          class="tool-item"
+          :class="call.status"
+        >
           <span class="tool-icon">
             <template v-if="call.status === 'calling'">
               <span class="spinner">⟳</span>
@@ -53,66 +70,80 @@ watch(() => props.toolCalls.length, (newLen, oldLen) => {
             <template v-else>失败</template>
           </span>
         </div>
-        <div v-if="call.status === 'error' && call.error" class="tool-error">
-          {{ call.error }}
-        </div>
       </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
-.tool-call-indicator {
+.tool-call-toast {
+  position: fixed;
+  bottom: 100px;
+  right: 24px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
+  border-radius: 12px;
+  padding: 12px 16px;
+  min-width: 240px;
+  max-width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  z-index: 100;
 }
 
-.indicator-header {
-  margin-bottom: 8px;
+.toast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
-.indicator-title {
-  font-size: 12px;
-  color: var(--text-secondary);
+.toast-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.toast-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-ai);
+  background: var(--bg-tertiary);
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 
 .tool-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tool-item {
-  background: var(--bg-tertiary);
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-
-.tool-item.calling {
-  border-left: 3px solid var(--accent);
-}
-
-.tool-item.success {
-  border-left: 3px solid #22c55e;
-}
-
-.tool-item.error {
-  border-left: 3px solid #ef4444;
-}
-
-.tool-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-ai);
+}
+
+.tool-item.success {
+  border-left-color: #22c55e;
+}
+
+.tool-item.error {
+  border-left-color: #ef4444;
 }
 
 .tool-icon {
   font-size: 14px;
+  width: 18px;
+  text-align: center;
 }
 
 .tool-item.calling .tool-icon {
@@ -133,23 +164,26 @@ watch(() => props.toolCalls.length, (newLen, oldLen) => {
 }
 
 .tool-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
+  flex: 1;
 }
 
 .tool-status {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
-  margin-left: auto;
 }
 
-.tool-error {
-  margin-top: 8px;
-  padding: 8px;
-  background: rgba(239, 68, 68, 0.1);
-  border-radius: 4px;
-  font-size: 13px;
-  color: #ef4444;
+/* Fade transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 </style>
